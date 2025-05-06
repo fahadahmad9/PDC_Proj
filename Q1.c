@@ -386,69 +386,6 @@ void multiObjectiveSP(EdgeList* graph, int n, int source, LabelSet* labelSets) {
     pq_free(&pq);
 }
 
-////////////////////////////////////////////
-// Single-objective shortest path (Dijkstra)
-////////////////////////////////////////////
-/*
-   Implementation of Dijkstra's algorithm for single-objective shortest paths.
-   We'll use the sum of c1 and c2 as the single objective cost function.
-*/
-void singleObjectiveSP(EdgeList* graph, int n, int source, int* distances) {
-    // Initialize distances to infinity (INT_MAX)
-    for(int i = 0; i < n; i++) {
-        distances[i] = INT_MAX;
-    }
-    
-    // Distance to source is 0
-    distances[source] = 0;
-    
-    // Boolean array to track visited nodes
-    bool* visited = (bool*)calloc(n, sizeof(bool));
-    if(!visited) {
-        fprintf(stderr, "ERROR: Out of memory (visited array)\n");
-        exit(EXIT_FAILURE);
-    }
-    
-    // Priority queue for Dijkstra
-    PQ pq;
-    pq_init(&pq);
-    
-    // Push source with distance 0 into PQ
-    pq_push(&pq, source, 0, 0);  // c2 is unused here, but we'll maintain the same PQ structure
-    
-    // Run Dijkstra algorithm
-    PQItem current;
-    while(pq_pop(&pq, &current)) {
-        int u = current.node;
-        int dist = current.c1;  // current distance to u
-        
-        // Skip if we've already processed this node or if we found a worse path
-        if(visited[u] || dist > distances[u]) continue;
-        
-        // Mark as visited
-        visited[u] = true;
-        
-        // For each neighbor v of u
-        for(int i = 0; i < graph[u].size; i++) {
-            int v = graph[u].edges[i].v;
-            // Use sum of c1 and c2 as the edge cost for single objective
-            int edgeCost = graph[u].edges[i].c1 + graph[u].edges[i].c2;
-            
-            // Relaxation step
-            if(!visited[v] && distances[u] != INT_MAX && 
-               distances[u] + edgeCost < distances[v]) {
-                // Update the distance
-                distances[v] = distances[u] + edgeCost;
-                // Push to PQ with new distance
-                pq_push(&pq, v, distances[v], 0);  // c2 unused in SOSP
-            }
-        }
-    }
-    
-    // Cleanup
-    free(visited);
-    pq_free(&pq);
-}
 
 int main(int argc, char* argv[]) {
     if(argc < 2) {
@@ -458,78 +395,37 @@ int main(int argc, char* argv[]) {
 
     // Set up timing
     clock_t start, end;
-    double sosp_time, mosp_time;
+    double cpu_time_used;
     
-    // Read the graph
+    // read the graph
     int n = 0;
     printf("Reading graph from file: %s\n", argv[1]);
     EdgeList* graph = readMatrixMarketGraph(argv[1], &n);
     
     // Print the number of nodes
-    printf("Graph size (n): %d nodes\n\n", n);
+    printf("Graph size (n): %d nodes\n", n);
 
-    // Set source node
+    // for demonstration, we'll fix source = 0
     int source = 0;
-    
-    ////////////////////////////////////////////
-    // Run Single-Objective Shortest Path (SOSP)
-    ////////////////////////////////////////////
-    printf("---------------------------------------------\n");
-    printf("Running Single-Objective Shortest Path (SOSP)...\n");
-    
-    // Allocate distances array
-    int* distances = (int*)malloc(n * sizeof(int));
-    if(!distances) {
-        fprintf(stderr, "ERROR: Out of memory (distances)\n");
-        return EXIT_FAILURE;
-    }
-    
-    // Start timing SOSP
-    start = clock();
-    
-    // Run SOSP algorithm
-    singleObjectiveSP(graph, n, source, distances);
-    
-    // End timing SOSP
-    end = clock();
-    sosp_time = ((double) (end - start)) / CLOCKS_PER_SEC;
-    printf("SOSP execution time: %.6f seconds\n\n", sosp_time);
-    
-    // Print sample of SOSP results
-    int limit = (n < 20) ? n : 20;
-    printf("Sample of SOSP distances for first %d nodes:\n", limit);
-    for(int i = 0; i < limit; i++) {
-        if(distances[i] == INT_MAX) {
-            printf("Node %d: UNREACHABLE\n", i);
-        } else {
-            printf("Node %d: %d\n", i, distances[i]);
-        }
-    }
-    printf("---------------------------------------------\n\n");
-    
-    ////////////////////////////////////////////
-    // Run Multi-Objective Shortest Path (MOSP)
-    ////////////////////////////////////////////
-    printf("---------------------------------------------\n");
-    printf("Running Multi-Objective Shortest Path (MOSP)...\n");
-    
-    // Allocate labelSets for all nodes
+
+    // allocate labelSets for all nodes
     LabelSet* labelSets = (LabelSet*) malloc(n * sizeof(LabelSet));
     if(!labelSets) {
         fprintf(stderr, "ERROR: out of memory (labelSets)\n");
         return EXIT_FAILURE;
     }
-    
-    // Start timing MOSP
+
+    // Start timing the algorithm execution
+    printf("Starting multi-objective shortest path algorithm...\n");
     start = clock();
     
-    // Run MOSP algorithm
+    // run multi-objective shortest path
     multiObjectiveSP(graph, n, source, labelSets);
     
-    // End timing MOSP
+    // End timing
     end = clock();
-    mosp_time = ((double) (end - start)) / CLOCKS_PER_SEC;
-    printf("MOSP execution time: %.6f seconds\n\n", mosp_time);
+    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+    printf("Algorithm execution time: %.6f seconds\n\n", cpu_time_used);
 
     // Count total number of labels generated
     int totalLabels = 0;
@@ -540,23 +436,16 @@ int main(int argc, char* argv[]) {
            totalLabels, (float)totalLabels/n);
 
     // Print out a sample of the Pareto sets for demonstration.
+    // We'll just show the first few nodes, since n can be very large.
+    int limit = (n < 100) ? n : 100;
     printf("Sample of Pareto fronts for first %d nodes:\n", limit);
     for(int i = 0; i < limit; i++) {
         printf("Node %d: %d label(s)\n", i, labelSets[i].size);
         for(int k = 0; k < labelSets[i].size; k++) {
-            printf("   (%d, %d)\n", labelSets[i].labels[k].c1, 
+            printf("   (%d, %d)\n", labelSets[i].labels[k].c1,
                                     labelSets[i].labels[k].c2);
         }
     }
-    printf("---------------------------------------------\n\n");
-    
-    // Compare execution times
-    printf("---------------------------------------------\n");
-    printf("Performance Comparison:\n");
-    printf("SOSP execution time: %.6f seconds\n", sosp_time);
-    printf("MOSP execution time: %.6f seconds\n", mosp_time);
-    printf("MOSP/SOSP time ratio: %.2f\n", mosp_time / sosp_time);
-    printf("---------------------------------------------\n");
 
     // Cleanup
     for(int i = 0; i < n; i++) {
@@ -565,7 +454,6 @@ int main(int argc, char* argv[]) {
     }
     free(graph);
     free(labelSets);
-    free(distances);
 
     return 0;
 }
